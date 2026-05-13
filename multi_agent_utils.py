@@ -1,8 +1,7 @@
 """
 multi_agent_utils.py
 ====================
-Shared dataset, collate functions, and helpers for multi-agent VLN training.
-Imported by both multi_agent_train.py and multi_agent_train_v2.py.
+
 """
 
 import os, random, json
@@ -15,7 +14,7 @@ import clip
 import h5py
 
 
-# ── CLIP text encoder (frozen) ─────────────────────────────────────────────────
+
 def load_clip_text_encoder(device):
     model, _ = clip.load("ViT-B/32", device=device)
     model.float(); model.eval()
@@ -35,7 +34,6 @@ def load_clip_text_encoder(device):
     return encode
 
 
-# ── view aggregation ───────────────────────────────────────────────────────────
 def encode_views(views):
     """(*, 36, 512) -> (*, 512) via attention-weighted pooling."""
     orig = views.shape[:-2]
@@ -45,7 +43,7 @@ def encode_views(views):
     return (w.unsqueeze(-1) * V).sum(dim=1).reshape(*orig, 512)
 
 
-# ── LR schedule ───────────────────────────────────────────────────────────────
+
 def get_scheduler(optimizer, warmup, total):
     def lr_lambda(epoch):
         if epoch < warmup:
@@ -55,7 +53,7 @@ def get_scheduler(optimizer, warmup, total):
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 
-# ── paired episode dataset ─────────────────────────────────────────────────────
+
 class PairedR2RDataset(Dataset):
     """
     Each item = a PAIR of episodes from the same scan.
@@ -86,7 +84,7 @@ class PairedR2RDataset(Dataset):
 
         print(f"  {split}: {len(episodes)} episodes → {len(self.pairs)} pairs")
 
-        # Pre-tokenise all instructions
+       
         self._tok_cache = {}
         all_eps = [ep for eps in by_scan.values() for ep in eps]
         for ep in all_eps:
