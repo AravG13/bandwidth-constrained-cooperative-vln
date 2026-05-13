@@ -14,7 +14,7 @@ class R2RDataset(Dataset):
     def __init__(self, json_path, features_path, conn_graph,
                  split='train', max_len=20, max_candidates=10,
                  aug_instructions=True):
-        "
+        
         self.features_path  = features_path
         self.graph          = conn_graph
         self.split          = split
