@@ -14,11 +14,7 @@ class R2RDataset(Dataset):
     def __init__(self, json_path, features_path, conn_graph,
                  split='train', max_len=20, max_candidates=10,
                  aug_instructions=True):
-        """
-        aug_instructions : if True and split=='train', randomly pick one of
-                           the 3 instructions per episode each __getitem__ call.
-                           Triples effective training data.
-        """
+        "
         self.features_path  = features_path
         self.graph          = conn_graph
         self.split          = split
@@ -31,14 +27,13 @@ class R2RDataset(Dataset):
             self.episodes = json.load(f)
         print(f"  {len(self.episodes)} episodes loaded")
 
-        # Pre-tokenise ALL 3 instructions per episode
         print("  Pre-tokenising instructions...")
-        self.tokens = []   # list of list[Tensor(77,)]
+        self.tokens = []  
         for ep in self.episodes:
             ep_toks = []
             for instr in ep["instructions"]:
                 tok = clip.tokenize([instr], truncate=True)
-                ep_toks.append(tok.squeeze(0))   # (77,)
+                ep_toks.append(tok.squeeze(0))   
             self.tokens.append(ep_toks)
         print(f"  Done.")
 
@@ -56,24 +51,24 @@ class R2RDataset(Dataset):
         path = ep["path"]
         T    = min(len(path) - 1, self.max_len)
 
-        # Instruction: random one of 3 during training, first otherwise
+        
         if self.aug_instructions:
             instr_idx = random.randint(0, len(self.tokens[idx]) - 1)
         else:
             instr_idx = 0
-        tokens = self.tokens[idx][instr_idx]   # (77,)
+        tokens = self.tokens[idx][instr_idx]   
 
-        candidate_features = []   # (T, max_candidates, 36, 512)
+        candidate_features = []   
         gt_actions         = []
         candidate_masks    = []
-        vp_features        = []   # (T+1, 36, 512)  — current viewpoint features
+        vp_features        = []   
 
         with h5py.File(self.features_path, 'r') as f:
-            # Current viewpoint features (full 36 views, not mean-pooled)
+           
             for t in range(T + 1):
                 vp = path[t]
                 if scan in f and vp in f[scan]:
-                    feat = f[scan][vp][:]              # (36, 512)
+                    feat = f[scan][vp][:]             
                 else:
                     feat = np.zeros((36, 512), dtype=np.float32)
                 vp_features.append(feat)
@@ -83,7 +78,7 @@ class R2RDataset(Dataset):
                 next_vp    = path[t + 1]
 
                 neighbours = self.graph.get_neighbours(scan, current_vp)
-                candidates = neighbours + [current_vp]   # last = STOP
+                candidates = neighbours + [current_vp]   
 
                 gt_act = candidates.index(next_vp) if next_vp in candidates else 0
                 gt_act = min(gt_act, self.max_candidates - 1)
@@ -91,7 +86,7 @@ class R2RDataset(Dataset):
                 cand_feats, mask = [], []
                 for vp in candidates[:self.max_candidates]:
                     if scan in f and vp in f[scan]:
-                        feat = f[scan][vp][:]          # (36, 512)
+                        feat = f[scan][vp][:]         
                     else:
                         feat = np.zeros((36, 512), dtype=np.float32)
                     cand_feats.append(feat)
@@ -107,9 +102,9 @@ class R2RDataset(Dataset):
 
         return {
             "tokens"     : tokens,
-            # (T+1, 36, 512)
+          
             "vp_features": torch.FloatTensor(np.stack(vp_features)),
-            # (T, max_candidates, 36, 512)
+         
             "cand_feats" : torch.FloatTensor(np.stack(candidate_features)),
             "cand_masks" : torch.BoolTensor(np.array(candidate_masks)),
             "gt_actions" : torch.LongTensor(gt_actions),
@@ -125,17 +120,17 @@ def collate_fn(batch):
     for b in batch:
         T   = b["gt_actions"].shape[0]
         pad = max_T - T
-        C   = b["cand_feats"].shape[1]   # max_candidates
+        C   = b["cand_feats"].shape[1]   
 
         tokens.append(b["tokens"])
 
-        # vp_features: (T+1, 36, 512)
+
         vf = b["vp_features"]
         if pad > 0:
             vf = torch.cat([vf, torch.zeros(pad, 36, 512)])
         vp_feats.append(vf)
 
-        # cand_feats: (T, C, 36, 512)
+      
         cf = b["cand_feats"]
         if pad > 0:
             cf = torch.cat([cf, torch.zeros(pad, C, 36, 512)])
@@ -152,9 +147,9 @@ def collate_fn(batch):
         gt_acts.append(ga)
 
     return {
-        "tokens"     : torch.stack(tokens),       # (B, 77)
-        "vp_features": torch.stack(vp_feats),     # (B, T+1, 36, 512)
-        "cand_feats" : torch.stack(cand_feats),   # (B, T, C, 36, 512)
-        "cand_masks" : torch.stack(cand_masks),   # (B, T, C)
-        "gt_actions" : torch.stack(gt_acts),      # (B, T)
+        "tokens"     : torch.stack(tokens),       
+        "vp_features": torch.stack(vp_feats),    
+        "cand_feats" : torch.stack(cand_feats),  
+        "cand_masks" : torch.stack(cand_masks),  
+        "gt_actions" : torch.stack(gt_acts),     
     }
