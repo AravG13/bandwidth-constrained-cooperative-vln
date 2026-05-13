@@ -1,7 +1,4 @@
-"""
-Simple multi-agent evaluator using W1 dot product scoring.
-Works with any checkpoint that has agent0/agent1 keys.
-"""
+
 import os, json, argparse, collections
 import numpy as np
 import torch
@@ -106,7 +103,7 @@ def main():
     agent0.eval(); agent1.eval()
     enc = load_clip_text_encoder(DEV)
 
-    # Pair episodes same way as dataset
+ 
     by_scan = collections.defaultdict(list)
     for ep in all_eps: by_scan[ep["scan"]].append(ep)
     paired_eps = []
