@@ -4,12 +4,6 @@ gate_analysis.py
 Analyses WHEN and WHERE the hindsight communication gate fires.
 This is the key qualitative result for the paper regardless of SR numbers.
 
-Shows:
-  1. Gate firing rate vs viewpoint connectivity (junctions vs hallways)
-  2. Gate firing rate over episode timeline (early vs late steps)  
-  3. Does gate fire more when agent was wrong? (validates hindsight training)
-  4. Budget usage patterns
-
 Run: python3 gate_analysis.py
 Outputs: results/gate_analysis.pdf, results/gate_analysis.png, printed table
 """
@@ -31,7 +25,7 @@ _args = _p.parse_args()
 BASE   = os.path.expanduser("~/vln_project")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# ── find best available checkpoint ───────────────────────────────────────────
+
 CKPT_CANDIDATES = [
     "results/checkpoints_hindsight/best_budget5.pt",
     "results/checkpoints_v3fix/best_budget5.pt",
@@ -54,7 +48,6 @@ if ckpt_path is None:
     for c in CKPT_CANDIDATES: print(f"  {c}")
     exit(1)
 
-# ── load model ───────────────────────────────────────────────────────────────
 graph = ConnectivityGraph(f"{BASE}/Matterport3DSimulator/connectivity")
 ds    = PairedR2RDataset(
     f"{BASE}/data/r2r/R2R_val_unseen.json",
@@ -66,7 +59,6 @@ loader = DataLoader(ds, batch_size=32, shuffle=False,
 
 ckpt  = torch.load(ckpt_path, map_location=DEVICE)
 agent = CooperativeVLNAgent(512, 512, 512, 36, 128).to(DEVICE)
-# Handle both single-agent and multi-agent checkpoint formats
 state = ckpt.get("agent0", ckpt.get("model"))
 agent.load_state_dict(state, strict=False)
 agent.eval()
@@ -74,16 +66,16 @@ agent.eval()
 enc = load_clip_text_encoder(DEVICE)
 W   = agent.nav_head.mlp[0]
 
-# ── collect step-level records ────────────────────────────────────────────────
-records = []  # list of dicts, one per (episode, step)
+
+records = []  
 
 with torch.no_grad():
     for batch_a, _ in loader:
         t  = batch_a["tokens"].to(DEVICE)
-        vp = encode_views(batch_a["vp_features"].to(DEVICE))   # (B,T+1,512)
-        cf = encode_views(batch_a["cand_feats"].to(DEVICE))    # (B,T,C,512)
-        cm = batch_a["cand_masks"].to(DEVICE)                  # (B,T,C)
-        gt = batch_a["gt_actions"].to(DEVICE)                  # (B,T)
+        vp = encode_views(batch_a["vp_features"].to(DEVICE))   
+        cf = encode_views(batch_a["cand_feats"].to(DEVICE))   
+        cm = batch_a["cand_masks"].to(DEVICE)                  
+        gt = batch_a["gt_actions"].to(DEVICE)                 
         B, T, C, _ = cf.shape
 
         lm    = enc(t)
@@ -112,15 +104,15 @@ with torch.no_grad():
                 p_send > 0.05
             ).float() * (sends < _args.budget).float()
 
-            # Softmax confidence on correct action
-            probs      = torch.softmax(sc, dim=-1)           # (B, C)
+           
+            probs      = torch.softmax(sc, dim=-1)         
             gtv        = gt[:, step]
             valid_mask = gtv >= 0
 
             for b in range(B):
                 if not valid_mask[b]:
                     continue
-                n_cands     = int(cm[b, step].sum().item())   # connectivity
+                n_cands     = int(cm[b, step].sum().item())  
                 fired       = gate[b].item() > 0.5
                 gt_action   = gtv[b].item()
                 pred_action = sc[b].argmax().item()
@@ -158,7 +150,7 @@ for k, rate, count in zip(conn_keys, conn_rates, conn_counts):
     bar = "█" * int(rate / 3)
     print(f"  {k:2d} neighbours ({count:5d} steps): {rate:5.1f}%  {bar}")
 
-# Correlation: does firing increase with connectivity?
+
 import numpy as np
 conn_vals  = [r["n_neighbours"] for r in records]
 gate_vals  = [r["gate_fired"]   for r in records]
@@ -218,7 +210,6 @@ for r in records:
 for k in sorted(send_counts.keys()):
     print(f"  {k} sends used so far: {send_counts[k]} steps")
 
-# ── Generate figures ──────────────────────────────────────────────────────────
 try:
     import matplotlib
     matplotlib.use('Agg')
@@ -270,9 +261,6 @@ try:
 except ImportError:
     print("\nmatplotlib not available — install with: pip install matplotlib")
 
-# ── Summary for paper ─────────────────────────────────────────────────────────
-print(f"\n{'='*55}")
-print("PAPER SUMMARY (copy these numbers into your paper)")
 print(f"{'='*55}")
 overall_rate = np.mean([r["gate_fired"] for r in records]) * 100
 print(f"Overall gate firing rate: {overall_rate:.1f}%")
