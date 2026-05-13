@@ -4,9 +4,6 @@ evaluate.py
 Evaluates a trained VLN agent on val_seen / val_unseen.
 Computes SR (Success Rate) and SPL (Success weighted by Path Length).
 
-SR  = fraction of episodes where agent ends within 3m of goal viewpoint
-SPL = mean(SR_i * shortest_path_len / max(pred_path_len, shortest_path_len))
-
 Usage:
     python3 evaluate.py --split val_seen
     python3 evaluate.py --split val_unseen
@@ -29,7 +26,7 @@ CONN_DIR  = os.path.join(BASE_DIR, "Matterport3DSimulator/connectivity")
 DATA_DIR  = os.path.join(BASE_DIR, "data/r2r")
 FEAT_PATH = os.path.join(BASE_DIR, "data/features/CLIP-ViT-B-32-views.hdf5")
 DEVICE    = "cuda" if torch.cuda.is_available() else "cpu"
-SUCCESS_DIST = 3.0   # metres — standard R2R threshold
+SUCCESS_DIST = 3.0  
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -41,7 +38,6 @@ def parse_args():
     p.add_argument("--max_candidates", type=int, default=10)
     return p.parse_args()
 
-# ── CLIP text encoder (same as train.py) ──────────────────────────────────────
 def load_clip_text_encoder(device):
     import clip as clip_lib
     model, _ = clip_lib.load("ViT-B/32", device=device)
@@ -60,13 +56,8 @@ def load_clip_text_encoder(device):
         return x
     return encode
 
-# ── viewpoint distance via connectivity graph ─────────────────────────────────
 def load_distances(conn_dir):
-    """
-    Precompute shortest-path distances between all viewpoint pairs per scan.
-    Uses BFS on the connectivity graph.
-    Returns dict: distances[scan][vp_a][vp_b] = metres (float)
-    """
+   
     import collections
     distances = {}
     for fname in os.listdir(conn_dir):
@@ -75,8 +66,7 @@ def load_distances(conn_dir):
         scan = fname.replace("_connectivity.json", "")
         conn = json.load(open(os.path.join(conn_dir, fname)))
 
-        # Build adjacency: vp -> list of (neighbour_vp, distance_metres)
-        positions = {}   # vp -> (x, y, z)
+        positions = {}   
         adj = collections.defaultdict(list)
         for node in conn:
             vp = node["image_id"]
@@ -91,7 +81,7 @@ def load_distances(conn_dir):
                     dist = float(np.linalg.norm(p1 - p2))
                     adj[vp].append((nb_vp, dist))
 
-        # BFS from each viewpoint
+   
         scan_dist = {}
         for start in positions:
             dist_map = {start: 0.0}
@@ -106,10 +96,10 @@ def load_distances(conn_dir):
         distances[scan] = scan_dist
     return distances
 
-# ── greedy agent rollout ───────────────────────────────────────────────────────
+
 
 def encode_views(views):
-    """(*, 36, 512) -> (*, 512) via attention-weighted pooling."""
+   
     orig = views.shape[:-2]
     V = views.reshape(-1, 36, 512)
     q = V.mean(dim=1)
@@ -118,11 +108,7 @@ def encode_views(views):
 
 @torch.no_grad()
 def run_greedy(agent, encode_lang, batch, device, max_steps):
-    """
-    Run agent greedily (argmax actions) for up to max_steps.
-    Returns predicted path indices (which candidate was chosen at each step).
-    Shape: (B, max_steps) — padded with -1 after episode ends.
-    """
+ 
     tokens     = batch["tokens"].to(device)
     vp_feats   = batch["vp_features"].to(device)
     cand_feats = batch["cand_feats"].to(device)
@@ -155,19 +141,14 @@ def run_greedy(agent, encode_lang, batch, device, max_steps):
         scores     = torch.bmm(cands_proj, h_proj.unsqueeze(-1)).squeeze(-1)
         scores     = scores.masked_fill(~mask, float("-inf"))
 
-        pred = scores.argmax(dim=-1)   # (B,) greedy
+        pred = scores.argmax(dim=-1)   
         pred_actions[:, t] = pred.cpu()
         prev_action = pred
 
-    return pred_actions   # (B, T)
+    return pred_actions
 
-# ── SR / SPL computation ───────────────────────────────────────────────────────
 def compute_sr_spl(episodes, pred_paths, distances, success_dist=3.0):
-    """
-    episodes  : list of R2R episode dicts (with 'scan', 'path')
-    pred_paths: list of viewpoint-id lists (predicted path taken)
-    distances : precomputed BFS distances
-    """
+   
     sr_list, spl_list = [], []
 
     for ep, pred_path in zip(episodes, pred_paths):
@@ -177,7 +158,7 @@ def compute_sr_spl(episodes, pred_paths, distances, success_dist=3.0):
         start_vp    = gt_path[0]
         pred_end_vp = pred_path[-1] if pred_path else start_vp
 
-        # Distance from predicted endpoint to goal
+        
         try:
             end_dist = distances[scan][pred_end_vp][goal_vp]
         except KeyError:
@@ -185,19 +166,19 @@ def compute_sr_spl(episodes, pred_paths, distances, success_dist=3.0):
 
         success = float(end_dist <= success_dist)
 
-        # Shortest-path distance (gt path length approximation)
+        
         try:
             shortest = distances[scan][start_vp][goal_vp]
         except KeyError:
             shortest = 1.0
 
-        # Predicted path length (sum of step distances)
+       
         pred_len = 0.0
         for i in range(len(pred_path) - 1):
             try:
                 pred_len += distances[scan][pred_path[i]][pred_path[i+1]]
             except KeyError:
-                pred_len += 3.0   # fallback
+                pred_len += 3.0   
 
         spl = success * shortest / max(shortest, pred_len, 1e-6)
 
@@ -206,7 +187,6 @@ def compute_sr_spl(episodes, pred_paths, distances, success_dist=3.0):
 
     return float(np.mean(sr_list)), float(np.mean(spl_list))
 
-# ── main ───────────────────────────────────────────────────────────────────────
 def main():
     args = parse_args()
 
@@ -241,7 +221,7 @@ def main():
 
     encode_lang = load_clip_text_encoder(DEVICE)
 
-    # ── rollout all episodes ──────────────────────────────────────────────────
+   
     all_pred_paths = []
     ep_idx = 0
 
@@ -255,7 +235,7 @@ def main():
             path = ep["path"]
             T    = min(len(path) - 1, args.max_len)
 
-            # Reconstruct predicted viewpoint path from action indices
+           
             pred_vp_path = [path[0]]
             scan = ep["scan"]
             for t in range(T):
@@ -264,19 +244,17 @@ def main():
                     break
                 cur_vp     = pred_vp_path[-1]
                 neighbours = graph.get_neighbours(scan, cur_vp)
-                candidates = neighbours + [cur_vp]   # last = STOP
+                candidates = neighbours + [cur_vp]   
                 if act < len(candidates):
                     next_vp = candidates[act]
-                    if next_vp == cur_vp:   # STOP — stay in place
+                    if next_vp == cur_vp:   
                         break
                     pred_vp_path.append(next_vp)
                 else:
-                    break  # invalid action = implicit stop
+                    break  
 
             all_pred_paths.append(pred_vp_path)
             ep_idx += 1
-
-    # ── compute metrics ───────────────────────────────────────────────────────
     sr, spl = compute_sr_spl(all_episodes, all_pred_paths, distances, SUCCESS_DIST)
 
     print(f"\n{'='*40}")
