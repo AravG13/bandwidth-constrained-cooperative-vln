@@ -5,10 +5,6 @@ Two agents navigate the SAME path to the SAME goal.
 Agent 0: starts at path[0], navigates full path
 Agent 1: starts at path[len//2], navigates second half
 
-This creates real information asymmetry:
-- Agent 1 has already seen the second half of the route
-- Agent 1's observations are genuinely useful to Agent 0
-- Communication has a real signal to learn from
 """
 import json, os, random
 import numpy as np
@@ -32,11 +28,11 @@ class AsymmetricPathDataset(Dataset):
         with open(json_path) as f:
             self.episodes = json.load(f)
 
-        # Only use episodes with path length >= 4 (need meaningful split)
+      
         self.episodes = [ep for ep in self.episodes if len(ep['path']) >= 4]
         print(f"  {split}: {len(self.episodes)} episodes (len>=4)")
 
-        # Pre-tokenise
+       
         self.tokens = []
         for ep in self.episodes:
             ep_toks = []
@@ -52,7 +48,7 @@ class AsymmetricPathDataset(Dataset):
         return len(self.episodes)
 
     def _load_path(self, ep, path, tokens):
-        """Load features for a specific path (may be sub-path)."""
+      
         scan = ep['scan']
         T    = min(len(path) - 1, self.max_len)
 
@@ -105,7 +101,7 @@ class AsymmetricPathDataset(Dataset):
         mid  = len(path) // 2
         ep_b = self._load_path(ep, path[mid:], tok)
 
-        # is_real flag: 1.0 for all real pairs
+      
         is_real = torch.tensor(1.0)
 
         return ep_a, ep_b, is_real
