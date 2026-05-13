@@ -1,0 +1,44 @@
+# Data — too large for git
+data/matterport/
+data/features/
+*.hdf5
+
+# Checkpoints — too large for git
+results/checkpoints*/
+*.pt
+*.pth
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+
+# Conda / pip
+.conda/
+*.egg
+
+# Wandb logs
+wandb/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# MatterSim build artifacts
+Matterport3DSimulator/build/
+Matterport3DSimulator/
