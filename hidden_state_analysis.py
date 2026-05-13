@@ -2,12 +2,7 @@
 Measures hidden state alignment between agents with vs without communication.
 Tests the hypothesis: communication aligns recurrent representations.
 
-ENHANCEMENTS:
-- Statistical significance testing
-- Error bars
-- Multiple communication-policy baselines
-- Communication-rate tracking
-- Long-trajectory filtering
+
 """
 
 import os
@@ -27,9 +22,6 @@ from models.vln_modules import CooperativeVLNAgent
 from torch.utils.data import DataLoader
 import argparse
 
-# =========================================================
-# ARGUMENTS
-# =========================================================
 
 p = argparse.ArgumentParser()
 
@@ -56,9 +48,7 @@ p.add_argument("--min_steps", type=int, default=8)
 
 args = p.parse_args()
 
-# =========================================================
-# SETUP
-# =========================================================
+
 
 BASE   = os.path.expanduser("~/vln_project")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -78,9 +68,6 @@ print(f"\nPolicy={args.policy}")
 print(f"Budget={args.budget}")
 print(f"Threshold={THRESH:.3f}")
 
-# =========================================================
-# DATASET
-# =========================================================
 
 graph = ConnectivityGraph(
     f"{BASE}/Matterport3DSimulator/connectivity"
@@ -104,9 +91,6 @@ loader = DataLoader(
     num_workers=0,
 )
 
-# =========================================================
-# LOAD MODEL
-# =========================================================
 
 ckpt = torch.load(args.ckpt, map_location=DEVICE)
 
@@ -124,20 +108,12 @@ enc = load_clip_text_encoder(DEVICE)
 
 W = agent.nav_head.mlp[0]
 
-# =========================================================
-# METRICS
-# =========================================================
-
 sim_with_comm    = defaultdict(list)
 sim_without_comm = defaultdict(list)
 gate_rates       = defaultdict(list)
 
 num_batches = 0
 num_long = 0
-
-# =========================================================
-# MAIN LOOP
-# =========================================================
 
 with torch.no_grad():
 
@@ -171,9 +147,6 @@ with torch.no_grad():
 
         num_batches += 1
 
-        # =====================================================
-        # WITH COMMUNICATION
-        # =====================================================
 
         h0c = agent.agent_gru.init_hidden(B, DEVICE)
         h1c = agent.agent_gru.init_hidden(B, DEVICE)
@@ -186,9 +159,7 @@ with torch.no_grad():
         m0c = None
         m1c = None
 
-        # =====================================================
-        # WITHOUT COMMUNICATION
-        # =====================================================
+    
 
         h0n = agent.agent_gru.init_hidden(B, DEVICE)
         h1n = agent.agent_gru.init_hidden(B, DEVICE)
@@ -196,16 +167,11 @@ with torch.no_grad():
         p0n = torch.zeros(B, dtype=torch.long, device=DEVICE)
         p1n = torch.zeros(B, dtype=torch.long, device=DEVICE)
 
-        # =====================================================
-        # ROLLOUT
-        # =====================================================
+        
 
         for step in range(T):
 
-            # =================================================
-            # WITH COMMUNICATION
-            # =================================================
-
+ 
             brem = (
                 1 - s0 / max(args.budget, 1)
             ).clamp(0, 1).unsqueeze(-1)
@@ -246,9 +212,7 @@ with torch.no_grad():
                 h1c,
             )
 
-            # =============================================
-            # COMMUNICATION POLICY
-            # =============================================
+         
 
             if args.budget == 0:
 
@@ -309,9 +273,7 @@ with torch.no_grad():
 
             s0 += gate
 
-            # =============================================
-            # ACTIONS WITH COMM
-            # =============================================
+           
 
             sc0c = torch.bmm(
                 W(cf0[:, step].reshape(B * C, 512)).reshape(B, C, -1),
@@ -337,9 +299,7 @@ with torch.no_grad():
 
             p1c = sc1c.argmax(-1)
 
-            # =================================================
-            # WITHOUT COMMUNICATION
-            # =================================================
+         
 
             ctx0n, _ = agent.cross_attn(
                 vp0[:, step],
@@ -367,9 +327,6 @@ with torch.no_grad():
                 h1n,
             )
 
-            # =============================================
-            # ACTIONS WITHOUT COMM
-            # =============================================
 
             sc0n = torch.bmm(
                 W(cf0[:, step].reshape(B * C, 512)).reshape(B, C, -1),
@@ -395,9 +352,7 @@ with torch.no_grad():
 
             p1n = sc1n.argmax(-1)
 
-            # =============================================
-            # HIDDEN ALIGNMENT
-            # =============================================
+          
 
             cos_with = torch.nn.functional.cosine_similarity(
                 h0c,
@@ -419,9 +374,6 @@ with torch.no_grad():
                 cos_without.cpu().tolist()
             )
 
-# =========================================================
-# RESULTS
-# =========================================================
 
 print("\n" + "=" * 70)
 print("Hidden State Alignment: With vs Without Communication")
@@ -491,9 +443,7 @@ print("Positive Δ => communication increases alignment")
 print("Early gate spikes => communication concentrated early")
 print("Persistent Δ => recurrent synchronization effect")
 
-# =========================================================
-# VISUALIZATION
-# =========================================================
+
 
 import matplotlib
 matplotlib.use("Agg")
@@ -534,9 +484,7 @@ gate_plot = [
 
 fig, axes = plt.subplots(1, 3, figsize=(16, 4))
 
-# =========================================================
-# ALIGNMENT CURVES
-# =========================================================
+
 
 axes[0].errorbar(
     steps,
@@ -564,9 +512,6 @@ axes[0].set_title('Hidden-state alignment')
 axes[0].legend()
 axes[0].grid(alpha=0.3)
 
-# =========================================================
-# DELTA PLOT
-# =========================================================
 
 colors = [
     'green' if d > 0 else 'red'
@@ -590,9 +535,7 @@ axes[1].set_ylabel('Δ similarity')
 axes[1].set_title('Communication alignment gain')
 axes[1].grid(alpha=0.3, axis='y')
 
-# =========================================================
-# GATE FIRING PROFILE
-# =========================================================
+#Gate firing:
 
 axes[2].plot(
     steps,
