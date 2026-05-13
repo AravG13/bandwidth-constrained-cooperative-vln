@@ -19,9 +19,9 @@ This repository contains code for **bandwidth-constrained cooperative Vision-Lan
 | Method | Val-Seen SR | Val-Unseen SR |
 |--------|-------------|---------------|
 | Seq2Seq baseline | 39% | 22% |
-| Single-agent (ours) | **43.2%** | 9.2% |
-| Multi-agent full-comm | — | ~9.3% |
-| Hindsight gate B=3 | — | ~8.4% |
+| Single-agent (ours) | 43.2% | 9.2% |
+| Multi-agent full-comm | 22.0% | 8.7% |
+| Hindsight gate B=3 | 21.2% | ~8.5% |
 
 **Alignment finding:** Learned gating achieves **+63% more hidden-state alignment gain** per transmission than random gating at matched budget (cumulative Δ +0.031 vs +0.019).
 
