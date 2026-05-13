@@ -1,12 +1,4 @@
-"""
-extract_features.py
-===================
-Extracts CLIP ViT-B/32 features for all Matterport3D viewpoints used in R2R.
-Run once. Takes ~2 hours on GPU. Produces data/features/CLIP-ViT-B-32-views.hdf5
 
-Usage:
-    python3 extract_features.py --img_dir data/matterport
-"""
 
 import os, json, argparse, math
 import numpy as np
@@ -25,13 +17,12 @@ args = parser.parse_args()
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Device: {device}")
 
-# Load CLIP
 model, preprocess = clip.load("ViT-B/32", device=device)
 model.eval()
 for p in model.parameters():
     p.requires_grad = False
 
-# Find which scans we need from R2R
+
 base = os.getcwd()
 scans_needed = set()
 for split in ['train', 'val_seen', 'val_unseen']:
@@ -41,7 +32,7 @@ for split in ['train', 'val_seen', 'val_unseen']:
             scans_needed.add(ep['scan'])
 print(f"Scans needed: {len(scans_needed)}")
 
-# Load connectivity to get viewpoint list per scan
+
 conn_dir = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     'Matterport3DSimulator/connectivity'
@@ -49,7 +40,7 @@ conn_dir = os.path.join(
 
 os.makedirs(os.path.dirname(args.out), exist_ok=True)
 
-# 36 view directions: 12 headings x 3 elevations
+
 HEADINGS   = [i * (2 * math.pi / 12) for i in range(12)]
 ELEVATIONS = [-math.pi / 6, 0, math.pi / 6]
 
@@ -64,7 +55,7 @@ def get_skybox_path(img_dir, scan, viewpoint, heading_idx):
 
 with h5py.File(args.out, 'w') as out_f:
     for scan in tqdm(sorted(scans_needed), desc='Scans'):
-        # Get viewpoints from connectivity file
+       
         conn_path = os.path.join(conn_dir, f'{scan}_connectivity.json')
         if not os.path.exists(conn_path):
             print(f"  SKIP {scan} — no connectivity file")
@@ -89,11 +80,11 @@ with h5py.File(args.out, 'w') as out_f:
                         img = torch.zeros(3, 224, 224)
                     imgs.append(img)
 
-            imgs_t = torch.stack(imgs).to(device)  # (36, 3, 224, 224)
+            imgs_t = torch.stack(imgs).to(device)  
 
             with torch.no_grad():
-                feats = model.encode_image(imgs_t)          # (36, 512)
-                feats = feats / feats.norm(dim=-1, keepdim=True)  # L2 normalise
+                feats = model.encode_image(imgs_t)         
+                feats = feats / feats.norm(dim=-1, keepdim=True)  
 
             scan_grp.create_dataset(vp, data=feats.cpu().float().numpy())
 
