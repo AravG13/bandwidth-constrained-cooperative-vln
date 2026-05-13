@@ -3,26 +3,19 @@ hindsight_partner_labels.py
 ============================
 Hindsight Communication Gating with Partner-Correct Labels.
 
-Key scientific improvement:
-  OLD: label = self_wrong  (I was wrong → I should have sent)
-  NEW: label = self_wrong AND partner_correct
-       (I was wrong AND partner knew the answer → communication would have helped)
-
-This creates TRUE communication utility labels:
+Communication utility labels:
   self wrong, partner wrong  → label=0 (sending wouldn't help)
   self wrong, partner right  → label=1 (partner could have helped me)
   self right, partner wrong  → label=0 (I didn't need help)
   self right, partner right  → label=0 (didn't need help)
 
-Expected improvement: ratio wrong/right >> 1.0 (was 1.00x with wrong-only)
-because label=1 ONLY when partner actually knows better.
 
 Usage:
-    python3 hindsight_partner_labels.py --overfit_test --no_wandb \
+    python3 hindsight_gate_train.py --overfit_test --no_wandb \
         --nav_epochs 0 --gate_epochs 15 --joint_epochs 5 \
         --init_from results/checkpoints_fixed/best_agent.pt
     
-    python3 hindsight_partner_labels.py \
+    python3 hindsight_gate_train.py \
         --nav_epochs 0 --gate_epochs 20 --joint_epochs 10 \
         --budget 3 \
         --init_from results/checkpoints_fixed/best_agent.pt \
@@ -81,7 +74,7 @@ def get_scheduler(optimizer, warmup, total):
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 
-# ── Core forward for one agent (no messages) ──────────────────────────────────
+
 def single_agent_rollout(agent, encode_lang, vp_feats, cand_feats,
                          cand_masks, gt_actions, lang_tokens, lang_mask, device):
     """
@@ -111,29 +104,16 @@ def single_agent_rollout(agent, encode_lang, vp_feats, cand_feats,
         sc  = sc.masked_fill(~mask, float("-inf"))
 
         all_scores.append(sc)
-        all_preds.append(sc.argmax(dim=-1))     # (B,)
-        all_hidden.append(h.detach())            # (B, 512)
+        all_preds.append(sc.argmax(dim=-1))    
+        all_hidden.append(h.detach())            
 
         prev = gt.clamp(min=0)
 
     return all_scores, all_preds, all_hidden
 
-
-# ── Partner-correct label collection ──────────────────────────────────────────
 def collect_partner_labels(agent0, agent1, encode_lang, loader,
                            device, budget, max_batches=100):
-    """
-    Run BOTH agents on paired episodes simultaneously.
-    For each step t:
-        self0_wrong[t]    = (pred0[t] != gt0[t])
-        partner1_correct[t] = (pred1[t] == gt1[t])
-        label0[t] = self0_wrong[t] AND partner1_correct[t]
-        label1[t] = self1_wrong[t] AND partner0_correct[t]
 
-    Returns:
-        hiddens0, labels0  — for agent0's gate
-        hiddens1, labels1  — for agent1's gate
-    """
     agent0.eval(); agent1.eval()
 
     all_h0, all_l0 = [], []
@@ -144,7 +124,7 @@ def collect_partner_labels(agent0, agent1, encode_lang, loader,
         for batch_a, batch_b, is_real in tqdm(loader,
                                                desc="Collecting partner labels",
                                                leave=False):
-            # Prep agent 0
+            
             t0  = batch_a["tokens"].to(device)
             vp0 = encode_views(batch_a["vp_features"].to(device))
             cf0 = encode_views(batch_a["cand_feats"].to(device))
@@ -153,7 +133,7 @@ def collect_partner_labels(agent0, agent1, encode_lang, loader,
             lm0 = encode_lang(t0)
             lmask0 = (t0 == 0).to(device)
 
-            # Prep agent 1
+          
             t1  = batch_b["tokens"].to(device)
             vp1 = encode_views(batch_b["vp_features"].to(device))
             cf1 = encode_views(batch_b["cand_feats"].to(device))
@@ -164,13 +144,11 @@ def collect_partner_labels(agent0, agent1, encode_lang, loader,
 
             T = min(cf0.shape[1], cf1.shape[1])
 
-            # Rollout both agents independently
             sc0, pred0, h0 = single_agent_rollout(
                 agent0, encode_lang, vp0, cf0, cm0, gt0, lm0, lmask0, device)
             sc1, pred1, h1 = single_agent_rollout(
                 agent1, encode_lang, vp1, cf1, cm1, gt1, lm1, lmask1, device)
 
-            # Compute partner-correct labels per step
             for t in range(T):
                 valid0 = gt0[:, t] >= 0
                 valid1 = gt1[:, t] >= 0
@@ -180,12 +158,11 @@ def collect_partner_labels(agent0, agent1, encode_lang, loader,
                 self1_wrong     = (pred1[t] != gt1[:, t]).float()
                 partner0_correct = (pred0[t] == gt0[:, t]).float()
 
-                # label = self_wrong AND partner_correct AND valid
                 label0 = self0_wrong * partner1_correct * valid0.float()
                 label1 = self1_wrong * partner0_correct * valid1.float()
 
-                all_h0.append(h0[t])   # (B, 512)
-                all_l0.append(label0)  # (B,)
+                all_h0.append(h0[t])   
+                all_l0.append(label0) 
                 all_h1.append(h1[t])
                 all_l1.append(label1)
 
@@ -208,11 +185,9 @@ def collect_partner_labels(agent0, agent1, encode_lang, loader,
 
     return hiddens0, labels0, hiddens1, labels1
 
-
-# ── Gate BCE training ──────────────────────────────────────────────────────────
 def train_gate_bce(agent, hiddens, labels, device, epochs=20, lr=1e-4):
     """
-    Train comm_gate with BCE + pos_weight to handle class imbalance.
+    Trainint comm_gate with BCE + pos_weight to handle class imbalance.
     """
     for p in agent.parameters():
         p.requires_grad = False
@@ -251,7 +226,7 @@ def train_gate_bce(agent, hiddens, labels, device, epochs=20, lr=1e-4):
         p.requires_grad = True
 
 
-# ── Phase 1: single-agent nav ─────────────────────────────────────────────────
+
 def nav_forward(agent, encode_lang, batch, device):
     tokens     = batch["tokens"].to(device)
     vp_feats   = encode_views(batch["vp_features"].to(device))
@@ -288,7 +263,7 @@ def nav_forward(agent, encode_lang, batch, device):
     return loss, acc
 
 
-# ── Phase 3: joint fine-tuning ────────────────────────────────────────────────
+
 def joint_forward(agent0, agent1, encode_lang, batch_a, batch_b,
                   is_real, device, budget):
     def prep(b):
@@ -334,7 +309,7 @@ def joint_forward(agent0, agent1, encode_lang, batch_a, batch_b,
                             W1(h1).unsqueeze(-1)).squeeze(-1)
         sc1     = sc1.masked_fill(~cm1[:, t], float('-inf'))
 
-        # Stochastic gate — avoids all-zero message collapse
+
         _, pg0, _ = agent0.comm_gate(h0, br0, deterministic=False)
         _, pg1, _ = agent1.comm_gate(h1, br1, deterministic=False)
         g0 = torch.bernoulli(pg0) * (s0 < budget).float() * is_real
@@ -357,8 +332,6 @@ def joint_forward(agent0, agent1, encode_lang, batch_a, batch_b,
     acc  = (lc[valid].argmax(-1) == gc[valid]).float().mean().item()
     return loss, acc, (s0.mean() + s1.mean()).item() / 2
 
-
-# ── main ───────────────────────────────────────────────────────────────────────
 def main():
     import torch.nn as nn
     args = parse_args()
@@ -427,9 +400,9 @@ def main():
 
     encode_lang = load_clip_text_encoder(DEVICE)
 
-    # ═══════════════════════════════════════════════════
-    # PHASE 1: Navigation (skip if nav_epochs=0)
-    # ═══════════════════════════════════════════════════
+  #Phase 1:
+
+  
     if args.nav_epochs > 0:
         print(f"\n{'='*55}")
         print(f"PHASE 1: Navigation ({args.nav_epochs} epochs)")
@@ -469,9 +442,9 @@ def main():
         print("Phase 1 skipped — using init_from weights directly")
         agent1.load_state_dict(agent0.state_dict())
 
-    # ═══════════════════════════════════════════════════
-    # PHASE 2: Partner-correct gate labels + BCE training
-    # ═══════════════════════════════════════════════════
+
+    # Phase 2: Partner-correct gate labels + BCE training
+
     print(f"\n{'='*55}")
     print(f"PHASE 2: Partner-correct gate training ({args.gate_epochs} epochs)")
     print(f"{'='*55}")
@@ -504,9 +477,9 @@ def main():
                 "phase": 2, "args": vars(args)},
                os.path.join(args.save_dir, "phase2_best.pt"))
 
-    # ═══════════════════════════════════════════════════
-    # PHASE 3: Joint fine-tuning
-    # ═══════════════════════════════════════════════════
+
+    # Phase 3: Joint fine-tuning
+  
     if args.joint_epochs > 0:
         print(f"\n{'='*55}")
         print(f"PHASE 3: Joint fine-tuning ({args.joint_epochs} epochs)")
